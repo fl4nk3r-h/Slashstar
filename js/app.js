@@ -2,6 +2,64 @@
 const TYPES = ['Class','Interface','Enum','Method','Constructor','Field'];
 let currentType = 'Class';
 
+const DOC_PROFILES = {
+  neutral: {
+    label: 'Strict standard Javadoc',
+    description: 'Recommended profile. Keeps the output close to the Javadoc spec with neutral formatting and predictable tag order.',
+    showPackageAndImports: true,
+    showClassIdentity: true,
+    showMethodIdentity: true,
+    showAuthor: true,
+    showVersion: true,
+    showSince: true,
+    showDeprecated: true,
+    showSee: true,
+    autoOpenSource: false,
+  },
+  oracle: {
+    label: 'Oracle / OpenJDK-like',
+    description: 'Matches the style commonly seen in Oracle/OpenJDK sources with explicit metadata tags and conservative alignment.',
+    showPackageAndImports: true,
+    showClassIdentity: true,
+    showMethodIdentity: true,
+    showAuthor: true,
+    showVersion: true,
+    showSince: true,
+    showDeprecated: true,
+    showSee: true,
+    autoOpenSource: false,
+  },
+  google: {
+    label: 'Google Java Style-like',
+    description: 'Keeps docs short and direct. Omits author/version metadata and focuses on concise summaries plus essential tags.',
+    showPackageAndImports: true,
+    showClassIdentity: false,
+    showMethodIdentity: false,
+    showAuthor: false,
+    showVersion: false,
+    showSince: false,
+    showDeprecated: true,
+    showSee: true,
+    autoOpenSource: false,
+  },
+  openSource: {
+    label: 'Open Source Project preset',
+    description: 'A practical preset for OSS projects. Starts with a license header and the neutral Javadoc profile so generated code is publication-ready.',
+    showPackageAndImports: true,
+    showClassIdentity: true,
+    showMethodIdentity: true,
+    showAuthor: true,
+    showVersion: true,
+    showSince: true,
+    showDeprecated: true,
+    showSee: true,
+    autoOpenSource: true,
+  },
+};
+
+const DOC_PROFILE_ORDER = ['neutral', 'oracle', 'google', 'openSource'];
+let currentProfile = 'neutral';
+
 const LICENSE_TEMPLATES = {
   none: null,
   gpl2: [
@@ -93,6 +151,142 @@ let state = {
 
 const isClass  = t => ['Class','Interface','Enum'].includes(t);
 const isMethod = t => ['Method','Constructor'].includes(t);
+const activeProfile = () => DOC_PROFILES[currentProfile] || DOC_PROFILES.neutral;
+
+function syncProfileDefaults(profileId) {
+  currentProfile = profileId;
+  const profile = activeProfile();
+
+  if (profile.autoOpenSource) {
+    state.hasCopyright = true;
+    if (!state.copyrightHolder.trim()) state.copyrightHolder = 'Open Source Contributors';
+    if (state.license === 'none') state.license = 'apache2';
+  }
+}
+
+function normalizeSentence(text) {
+  const value = text.trim();
+  if (!value) return '';
+  return /[.!?]$/.test(value) ? value : `${value}.`;
+}
+
+function appendLine(out, text, kind) {
+  out[out.length] = { text, kind };
+}
+
+function formatDescription(text) {
+  return text
+    .trim()
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => normalizeSentence(line));
+}
+
+function appendCopyrightBlock(out, state) {
+  if (!state.hasCopyright) return;
+  const holder = state.copyrightHolder.trim() || 'The Author';
+  const sy = state.copyrightStartYear.trim();
+  const ey = state.copyrightEndYear.trim();
+  const yr = (sy && ey && sy !== ey) ? `${sy}, ${ey}` : (ey || sy || new Date().getFullYear());
+
+  appendLine(out, '/*', 'comment');
+  appendLine(out, ` * Copyright (c) ${yr}, ${holder}. All rights reserved.`, 'comment');
+
+  let licenseTemplate = LICENSE_TEMPLATES[state.license];
+  if (state.license === 'custom') {
+    licenseTemplate = state.customLicense.trim() ? state.customLicense.trim().split('\n').map(line => ` * ${line}`) : null;
+  }
+
+  if (licenseTemplate) {
+    appendLine(out, ' *', 'comment');
+    licenseTemplate.forEach(line => appendLine(out, line, 'comment'));
+  }
+
+  appendLine(out, ' */', 'comment');
+  appendLine(out, '', 'blank');
+}
+
+function appendPackageAndImports(out, state, profile) {
+  if (profile.showPackageAndImports && state.hasPackage && state.packageName.trim()) {
+    appendLine(out, `package ${state.packageName.trim()};`, 'pkg');
+    appendLine(out, '', 'blank');
+  }
+
+  const validImports = state.imports.filter(item => item.trim());
+  if (profile.showPackageAndImports && validImports.length) {
+    validImports.forEach(item => appendLine(out, `import ${item.trim()};`, 'imp'));
+    appendLine(out, '', 'blank');
+  }
+}
+
+function appendDescription(out, state) {
+  if (!state.desc.trim()) return;
+  formatDescription(state.desc).forEach(line => appendLine(out, ` * ${line}`, 'comment'));
+  appendLine(out, ' *', 'comment');
+}
+
+function appendClassTags(out, state, currentType, profile) {
+  if (!isClass(currentType)) return;
+
+  state.typeParams.filter(param => param.name.trim() || param.desc.trim()).forEach(param => {
+    const paramDescription = param.desc.trim();
+    const suffix = paramDescription ? ` ${paramDescription}` : '';
+    appendLine(out, ` * @param ${param.name.trim() || '<T>'}${suffix}`, 'tag');
+  });
+
+  if (profile.showAuthor && state.author.trim()) {
+    state.author.split(',').map(author => author.trim()).filter(Boolean).forEach(author => {
+      appendLine(out, ` * @author ${author}`, 'tag');
+    });
+  }
+
+  if (profile.showVersion && state.version.trim()) {
+    appendLine(out, ` * @version ${state.version.trim()}`, 'tag');
+  }
+}
+
+function appendMethodTags(out, state, currentType, profile) {
+  if (!isMethod(currentType)) return;
+
+  if (profile.showAuthor && state.author.trim()) {
+    appendLine(out, ` * @author ${state.author.trim()}`, 'tag');
+  }
+
+  if (profile.showSince && state.since.trim()) {
+    appendLine(out, ` * @since ${state.since.trim()}`, 'tag');
+  }
+
+  state.params.filter(param => param.name.trim() || param.desc.trim()).forEach(param => {
+    const typePrefix = param.ptype.trim() ? `(${param.ptype.trim()}) ` : '';
+    const paramDescription = param.desc.trim();
+    const suffix = paramDescription ? ` ${paramDescription}` : '';
+    appendLine(out, ` * @param ${typePrefix}${param.name.trim() || 'param'}${suffix}`, 'tag');
+  });
+
+  if (currentType === 'Method' && (state.returns.rtype.trim() || state.returns.desc.trim())) {
+    const returnType = state.returns.rtype.trim() ? `{${state.returns.rtype.trim()}} ` : '';
+    appendLine(out, ` * @return ${returnType}${state.returns.desc.trim()}`, 'tag');
+  }
+
+  state.throws.filter(error => error.etype.trim() || error.desc.trim()).forEach(error => {
+    const errorDescription = error.desc.trim();
+    const suffix = errorDescription ? ` ${errorDescription}` : '';
+    appendLine(out, ` * @throws ${error.etype.trim() || 'Exception'}${suffix}`, 'tag');
+  });
+}
+
+function appendFooterTags(out, state, profile) {
+  if (profile.showDeprecated && state.deprecated.trim()) {
+    appendLine(out, ` * @deprecated ${state.deprecated.trim()}`, 'tag');
+  }
+
+  if (profile.showSee) {
+    state.see.filter(ref => ref.trim()).forEach(ref => {
+      appendLine(out, ` * @see ${ref.trim()}`, 'tag');
+    });
+  }
+}
 
 /* ── Tabs ──────────────────────────────────────────────────────────────── */
 const tabsEl = document.getElementById('tabs');
@@ -124,16 +318,230 @@ function mkTextarea(rows,ph,val,cb) {
 }
 function mkLabel(txt) { return el('label',null,txt); }
 function fg(lbl,inp) {
-  const g=el('div',{className:'field-group'}); if(lbl) g.appendChild(mkLabel(lbl)); g.appendChild(inp); return g;
+  const g=el('div',{className:'field-group'});
+  if (lbl) {
+    g.appendChild(mkLabel(lbl));
+  }
+  g.appendChild(inp);
+  return g;
 }
 function mkSelect(opts,val,cb) {
   const s=el('select'); s.onchange=cb;
-  opts.forEach(([v,t])=>{ const o=el('option',{value:v},t); if(v===val) o.selected=true; s.appendChild(o); });
+  opts.forEach(([v,t]) => {
+    const o=el('option',{value:v},t);
+    if (v===val) {
+      o.selected=true;
+    }
+    s.appendChild(o);
+  });
   return s;
 }
 function subTitle(txt) { return el('div',{className:'sub-title'},txt); }
 function rmBtn(cb)  { const b=el('button',{className:'remove-btn'},'×'); b.onclick=cb; return b; }
 function addBtn(txt,cb) { const b=el('button',{className:'add-btn'},txt); b.onclick=cb; return b; }
+
+function getNameLabel(type) {
+  if (type === 'Field') return 'Field Name';
+  if (type === 'Method') return 'Method Name';
+  if (type === 'Constructor') return 'Class Name';
+  return `${type} Name`;
+}
+
+function getNamePlaceholder(type) {
+  if (type === 'Method') return 'calculateTotal';
+  if (type === 'Field') return 'MAX_SIZE';
+  return 'MyClass';
+}
+
+function createPackageImportsSection(profile) {
+  return section('Package & Imports', profile.showPackageAndImports ? 'optional' : 'hidden', state.hasPackage || state.imports.some(item => item.trim()), body => {
+    const pkgWrap = el('div');
+    pkgWrap.style.display = state.hasPackage ? 'block' : 'none';
+    pkgWrap.appendChild(fg('Package Name', mkInput('com.example.mypackage', state.packageName, e => { state.packageName = e.target.value; renderOutput(); })));
+
+    const packageToggle = el('input', { type: 'checkbox', id: 'chk-pkg' });
+    packageToggle.checked = state.hasPackage;
+    const packageLabel = el('label', { htmlFor: 'chk-pkg' }, 'Include package declaration');
+    packageToggle.onchange = e => {
+      state.hasPackage = e.target.checked;
+      pkgWrap.style.display = e.target.checked ? 'block' : 'none';
+      renderOutput();
+    };
+
+    body.appendChild(el('div', { className: 'check-row' }, packageToggle, packageLabel));
+    body.appendChild(pkgWrap);
+
+    body.appendChild(subTitle('Imports'));
+    const importList = el('div');
+
+    function renderImports() {
+      importList.innerHTML = '';
+      for (let i = 0; i < state.imports.length; i += 1) {
+        const importValue = state.imports[i];
+        const row = el('div', { className: 'dyn-row' });
+        const input = mkInput('java.util.List', importValue, e => {
+          state.imports[i] = e.target.value;
+          renderOutput();
+        });
+        row.append(input, rmBtn(() => {
+          state.imports.splice(i, 1);
+          renderImports();
+          renderOutput();
+        }));
+        importList.appendChild(row);
+      }
+    }
+
+    renderImports();
+    body.appendChild(importList);
+    body.appendChild(addBtn('+ add import', () => { state.imports.push(''); renderImports(); renderOutput(); }));
+  });
+}
+
+function createTypeParamsSection() {
+  return section('@param <T> — Generic Type Parameters', 'optional', false, body => {
+    const list = el('div');
+
+    function renderTypeParams() {
+      list.innerHTML = '';
+      for (let i = 0; i < state.typeParams.length; i += 1) {
+        const param = state.typeParams[i];
+        const row = el('div', { className: 'dyn-row' });
+        const nameInput = mkInput('<E>', param.name, e => {
+          state.typeParams[i].name = e.target.value;
+          renderOutput();
+        });
+        nameInput.style.maxWidth = '80px';
+        const descInput = mkInput('the type of elements in this list', param.desc, e => {
+          state.typeParams[i].desc = e.target.value;
+          renderOutput();
+        });
+        row.append(nameInput, descInput, rmBtn(() => {
+          state.typeParams.splice(i, 1);
+          renderTypeParams();
+          renderOutput();
+        }));
+        list.appendChild(row);
+      }
+    }
+
+    renderTypeParams();
+    body.appendChild(list);
+    body.appendChild(addBtn('+ add type param', () => { state.typeParams.push({ name: '', desc: '' }); renderTypeParams(); renderOutput(); }));
+  });
+}
+
+function createMethodParamsSection() {
+  return section('@param — Parameters', '', true, body => {
+    const list = el('div');
+
+    function renderParams() {
+      list.innerHTML = '';
+      for (let i = 0; i < state.params.length; i += 1) {
+        const param = state.params[i];
+        const row = el('div', { className: 'dyn-row' });
+        const typeInput = mkInput('Type', param.ptype, e => {
+          state.params[i].ptype = e.target.value;
+          renderOutput();
+        });
+        const nameInput = mkInput('name', param.name, e => {
+          state.params[i].name = e.target.value;
+          renderOutput();
+        });
+        const descInput = mkInput('description', param.desc, e => {
+          state.params[i].desc = e.target.value;
+          renderOutput();
+        });
+        row.append(typeInput, nameInput, descInput, rmBtn(() => {
+          state.params.splice(i, 1);
+          renderParams();
+          renderOutput();
+        }));
+        list.appendChild(row);
+      }
+    }
+
+    renderParams();
+    body.appendChild(list);
+    body.appendChild(addBtn('+ add parameter', () => { state.params.push({ ptype: '', name: '', desc: '' }); renderParams(); renderOutput(); }));
+  });
+}
+
+function createThrowsSection() {
+  return section('@throws — Exceptions', 'optional', false, body => {
+    const list = el('div');
+
+    function renderThrows() {
+      list.innerHTML = '';
+      for (let i = 0; i < state.throws.length; i += 1) {
+        const thrown = state.throws[i];
+        const row = el('div', { className: 'dyn-row' });
+        const typeInput = mkInput('ExceptionType', thrown.etype, e => {
+          state.throws[i].etype = e.target.value;
+          renderOutput();
+        });
+        const descInput = mkInput('when thrown', thrown.desc, e => {
+          state.throws[i].desc = e.target.value;
+          renderOutput();
+        });
+        row.append(typeInput, descInput, rmBtn(() => {
+          state.throws.splice(i, 1);
+          renderThrows();
+          renderOutput();
+        }));
+        list.appendChild(row);
+      }
+    }
+
+    renderThrows();
+    body.appendChild(list);
+    body.appendChild(addBtn('+ add throws', () => { state.throws.push({ etype: '', desc: '' }); renderThrows(); renderOutput(); }));
+  });
+}
+
+function createSeeSection() {
+  return section('@see — Cross References', 'optional', false, body => {
+    const list = el('div');
+
+    function renderSee() {
+      list.innerHTML = '';
+      for (let i = 0; i < state.see.length; i += 1) {
+        const seeRef = state.see[i];
+        const row = el('div', { className: 'dyn-row' });
+        const input = mkInput('Collection', seeRef, e => {
+          state.see[i] = e.target.value;
+          renderOutput();
+        });
+        row.append(input, rmBtn(() => {
+          state.see.splice(i, 1);
+          renderSee();
+          renderOutput();
+        }));
+        list.appendChild(row);
+      }
+    }
+
+    renderSee();
+    body.appendChild(list);
+    body.appendChild(addBtn('+ add @see', () => { state.see.push(''); renderSee(); renderOutput(); }));
+  });
+}
+
+const profileSelect = document.getElementById('profile-select');
+const profileHint = document.getElementById('profile-hint');
+DOC_PROFILE_ORDER.forEach(profileId => {
+  const profile = DOC_PROFILES[profileId];
+  const option = el('option', { value: profileId }, profile.label);
+  if (profileId === currentProfile) option.selected = true;
+  profileSelect.appendChild(option);
+});
+profileHint.textContent = activeProfile().description;
+profileSelect.onchange = e => {
+  syncProfileDefaults(e.target.value);
+  profileHint.textContent = activeProfile().description;
+  renderForm();
+  renderOutput();
+};
 
 /* Collapsible section */
 function section(title, badge, open, buildFn) {
@@ -167,15 +575,22 @@ function tagHints(textarea) {
 /* ── Render Form ────────────────────────────────────────────────────────── */
 function renderForm() {
   const f = document.getElementById('form-fields'); f.innerHTML='';
+  const profile = activeProfile();
 
   /* 1 ── Copyright / File Header */
-  f.appendChild(section('Copyright / File Header', 'optional', state.hasCopyright, body => {
+  f.appendChild(section('Copyright / File Header', profile.autoOpenSource ? 'open source' : 'optional', state.hasCopyright || profile.autoOpenSource, body => {
     const inner = el('div');
     const cb = el('input',{type:'checkbox',id:'chk-copy'}); cb.checked=state.hasCopyright;
     const cbl = el('label',{htmlFor:'chk-copy'},'Include copyright header in output');
     body.appendChild(el('div',{className:'check-row'},cb,cbl));
+    if (profile.autoOpenSource) {
+      state.hasCopyright = true;
+      cb.checked = true;
+      cb.disabled = true;
+    }
     cb.onchange = e => { state.hasCopyright=e.target.checked; inner.style.display=e.target.checked?'block':'none'; renderOutput(); };
     inner.style.display = state.hasCopyright?'block':'none';
+    if (profile.autoOpenSource) inner.style.display = 'block';
 
     const yr = el('div',{className:'two-col'});
     yr.appendChild(fg('Start Year', mkInput('1997', state.copyrightStartYear, e=>{ state.copyrightStartYear=e.target.value; renderOutput(); })));
@@ -191,6 +606,10 @@ function renderForm() {
       ['bsd2','BSD 2-Clause'],
       ['custom','Custom text'],
     ], state.license, e=>{ state.license=e.target.value; customWrap.style.display=e.target.value==='custom'?'block':'none'; renderOutput(); });
+    if (profile.autoOpenSource && state.license === 'none') {
+      state.license = 'apache2';
+      licSel.value = 'apache2';
+    }
     inner.appendChild(fg('License', licSel));
 
     const customWrap = el('div',{style:'margin-top:6px;'}); customWrap.style.display=state.license==='custom'?'block':'none';
@@ -200,40 +619,12 @@ function renderForm() {
   }));
 
   /* 2 ── Package & Imports */
-  f.appendChild(section('Package & Imports', 'optional', state.hasPackage || state.imports.some(i=>i.trim()), body => {
-    const pkgWrap = el('div'); pkgWrap.style.display=state.hasPackage?'block':'none';
-    pkgWrap.appendChild(fg('Package Name', mkInput('com.example.mypackage', state.packageName, e=>{ state.packageName=e.target.value; renderOutput(); })));
-    const cb2 = el('input',{type:'checkbox',id:'chk-pkg'}); cb2.checked=state.hasPackage;
-    const cbl2 = el('label',{htmlFor:'chk-pkg'},'Include package declaration');
-    cb2.onchange = e => { state.hasPackage=e.target.checked; pkgWrap.style.display=e.target.checked?'block':'none'; renderOutput(); };
-    body.appendChild(el('div',{className:'check-row'},cb2,cbl2));
-    body.appendChild(pkgWrap);
-
-    body.appendChild(subTitle('Imports'));
-    const importList = el('div');
-    function renderImports() {
-      importList.innerHTML='';
-      state.imports.forEach((imp,i) => {
-        const row=el('div',{className:'dyn-row'});
-        const inp=mkInput('java.util.List', imp, e=>{ state.imports[i]=e.target.value; renderOutput(); });
-        row.append(inp, rmBtn(()=>{ state.imports.splice(i,1); renderImports(); renderOutput(); }));
-        importList.appendChild(row);
-      });
-    }
-    renderImports(); body.appendChild(importList);
-    body.appendChild(addBtn('+ add import', ()=>{ state.imports.push(''); renderImports(); renderOutput(); }));
-  }));
+  f.appendChild(createPackageImportsSection(profile));
 
   /* 3 ── Name & Description */
   f.appendChild(section('Name & Description', '', true, body => {
-    const nameLbl =
-      currentType==='Field' ? 'Field Name' :
-      currentType==='Method' ? 'Method Name' :
-      currentType==='Constructor' ? 'Class Name' :
-      currentType+' Name';
-    const namePH =
-      currentType==='Method' ? 'calculateTotal' :
-      currentType==='Field'  ? 'MAX_SIZE' : 'MyClass';
+    const nameLbl = getNameLabel(currentType);
+    const namePH = getNamePlaceholder(currentType);
     body.appendChild(fg(nameLbl, mkInput(namePH, state.name, e=>{ state.name=e.target.value; renderOutput(); })));
 
     const dTA = mkTextarea(4, 'Describe the purpose and behaviour.\nSupports {@code X}, {@link Y#m()}, <p>, <strong> etc.', state.desc, e=>{ state.desc=e.target.value; renderOutput(); });
@@ -242,7 +633,7 @@ function renderForm() {
   }));
 
   /* 4 ── Class-level: Author, Version, Since, Generic type params */
-  if (isClass(currentType)) {
+  if (isClass(currentType) && profile.showClassIdentity) {
     f.appendChild(section('Author, Version & Since', '', true, body => {
       body.appendChild(fg('Author(s) — comma-separated', mkInput('John Doe, Alex Smith', state.author, e=>{ state.author=e.target.value; renderOutput(); })));
       const vc=el('div',{className:'two-col'});
@@ -251,48 +642,21 @@ function renderForm() {
       body.appendChild(vc);
     }));
 
-    f.appendChild(section('@param <T> — Generic Type Parameters', 'optional', false, body => {
-      const list=el('div');
-      function renderTP() {
-        list.innerHTML='';
-        state.typeParams.forEach((p,i)=>{
-          const row=el('div',{className:'dyn-row'});
-          const n=mkInput('<E>', p.name, e=>{ state.typeParams[i].name=e.target.value; renderOutput(); }); n.style.maxWidth='80px';
-          const d=mkInput('the type of elements in this list', p.desc, e=>{ state.typeParams[i].desc=e.target.value; renderOutput(); });
-          row.append(n,d,rmBtn(()=>{ state.typeParams.splice(i,1); renderTP(); renderOutput(); }));
-          list.appendChild(row);
-        });
-      }
-      renderTP(); body.appendChild(list);
-      body.appendChild(addBtn('+ add type param', ()=>{ state.typeParams.push({name:'',desc:''}); renderTP(); renderOutput(); }));
-    }));
+    f.appendChild(createTypeParamsSection());
   }
 
   /* 5 ── Method-level: since/author, params, returns, throws */
   if (isMethod(currentType)) {
-    f.appendChild(section('Since & Author', 'optional', false, body => {
-      const vc=el('div',{className:'two-col'});
-      vc.appendChild(fg('Since',  mkInput('1.0', state.since,  e=>{ state.since=e.target.value;  renderOutput(); })));
-      vc.appendChild(fg('Author', mkInput('',    state.author, e=>{ state.author=e.target.value; renderOutput(); })));
-      body.appendChild(vc);
-    }));
+    if (profile.showMethodIdentity) {
+      f.appendChild(section('Since & Author', 'optional', false, body => {
+        const vc=el('div',{className:'two-col'});
+        vc.appendChild(fg('Since',  mkInput('1.0', state.since,  e=>{ state.since=e.target.value;  renderOutput(); })));
+        vc.appendChild(fg('Author', mkInput('',    state.author, e=>{ state.author=e.target.value; renderOutput(); })));
+        body.appendChild(vc);
+      }));
+    }
 
-    f.appendChild(section('@param — Parameters', '', true, body => {
-      const list=el('div');
-      function renderParams() {
-        list.innerHTML='';
-        state.params.forEach((p,i)=>{
-          const row=el('div',{className:'dyn-row'});
-          const t=mkInput('Type',        p.ptype, e=>{ state.params[i].ptype=e.target.value; renderOutput(); });
-          const n=mkInput('name',        p.name,  e=>{ state.params[i].name=e.target.value;  renderOutput(); });
-          const d=mkInput('description', p.desc,  e=>{ state.params[i].desc=e.target.value;  renderOutput(); });
-          row.append(t,n,d,rmBtn(()=>{ state.params.splice(i,1); renderParams(); renderOutput(); }));
-          list.appendChild(row);
-        });
-      }
-      renderParams(); body.appendChild(list);
-      body.appendChild(addBtn('+ add parameter', ()=>{ state.params.push({ptype:'',name:'',desc:''}); renderParams(); renderOutput(); }));
-    }));
+    f.appendChild(createMethodParamsSection());
 
     if (currentType==='Method') {
       f.appendChild(section('@return — Return Value', '', true, body => {
@@ -303,21 +667,7 @@ function renderForm() {
       }));
     }
 
-    f.appendChild(section('@throws — Exceptions', 'optional', false, body => {
-      const list=el('div');
-      function renderThrows() {
-        list.innerHTML='';
-        state.throws.forEach((t,i)=>{
-          const row=el('div',{className:'dyn-row'});
-          const e2=mkInput('ExceptionType', t.etype, e=>{ state.throws[i].etype=e.target.value; renderOutput(); });
-          const d =mkInput('when thrown',   t.desc,  e=>{ state.throws[i].desc=e.target.value;  renderOutput(); });
-          row.append(e2,d,rmBtn(()=>{ state.throws.splice(i,1); renderThrows(); renderOutput(); }));
-          list.appendChild(row);
-        });
-      }
-      renderThrows(); body.appendChild(list);
-      body.appendChild(addBtn('+ add throws', ()=>{ state.throws.push({etype:'',desc:''}); renderThrows(); renderOutput(); }));
-    }));
+    f.appendChild(createThrowsSection());
   }
 
   if (currentType==='Field') {
@@ -327,111 +677,33 @@ function renderForm() {
   }
 
   /* 6 ── Deprecated */
-  f.appendChild(section('@deprecated', 'optional', !!state.deprecated, body => {
-    body.appendChild(fg('', mkInput('Use {@link NewClass} instead', state.deprecated, e=>{ state.deprecated=e.target.value; renderOutput(); })));
-  }));
+  if (profile.showDeprecated) {
+    f.appendChild(section('@deprecated', 'optional', !!state.deprecated, body => {
+      body.appendChild(fg('', mkInput('Use {@link NewClass} instead', state.deprecated, e=>{ state.deprecated=e.target.value; renderOutput(); })));
+    }));
+  }
 
   /* 7 ── @see */
-  f.appendChild(section('@see — Cross References', 'optional', false, body => {
-    const list=el('div');
-    function renderSee() {
-      list.innerHTML='';
-      state.see.forEach((s,i)=>{
-        const row=el('div',{className:'dyn-row'});
-        const inp=mkInput('Collection', s, e=>{ state.see[i]=e.target.value; renderOutput(); });
-        row.append(inp,rmBtn(()=>{ state.see.splice(i,1); renderSee(); renderOutput(); }));
-        list.appendChild(row);
-      });
-    }
-    renderSee(); body.appendChild(list);
-    body.appendChild(addBtn('+ add @see', ()=>{ state.see.push(''); renderSee(); renderOutput(); }));
-  }));
+  if (profile.showSee) {
+    f.appendChild(createSeeSection());
+  }
 }
 
 /* ── Generate output lines ─────────────────────────────────────────────── */
 function generate() {
-  // Each line: { text, kind }
+  const profile = activeProfile();
   const out = [];
-  const line = (text, kind) => out.push({ text, kind });
-  const comment = text => line(text, 'comment');
-
-  /* Copyright block */
-  if (state.hasCopyright) {
-    const holder = state.copyrightHolder.trim() || 'The Author';
-    const sy = state.copyrightStartYear.trim();
-    const ey = state.copyrightEndYear.trim();
-    const yr = (sy && ey && sy!==ey) ? `${sy}, ${ey}` : (ey||sy||new Date().getFullYear());
-    comment('/*');
-    comment(` * Copyright (c) ${yr}, ${holder}. All rights reserved.`);
-    const tpl = state.license==='custom'
-      ? (state.customLicense.trim() ? state.customLicense.trim().split('\n').map(l=>' * '+l) : null)
-      : LICENSE_TEMPLATES[state.license];
-    if (tpl) { comment(' *'); tpl.forEach(l=>comment(l)); }
-    comment(' */');
-    line('', 'blank');
+  appendCopyrightBlock(out, state);
+  appendPackageAndImports(out, state, profile);
+  appendLine(out, '/**', 'comment');
+  appendDescription(out, state);
+  appendClassTags(out, state, currentType, profile);
+  if (profile.showSince && (isClass(currentType) || currentType === 'Field') && state.since.trim()) {
+    appendLine(out, ` * @since ${state.since.trim()}`, 'tag');
   }
-
-  /* Package */
-  if (state.hasPackage && state.packageName.trim()) {
-    line(`package ${state.packageName.trim()};`, 'pkg');
-    line('', 'blank');
-  }
-
-  /* Imports */
-  const validImports = state.imports.filter(i=>i.trim());
-  if (validImports.length) {
-    validImports.forEach(i=>line(`import ${i.trim()};`, 'imp'));
-    line('', 'blank');
-  }
-
-  /* JavaDoc */
-  comment('/**');
-
-  if (state.desc.trim()) {
-    state.desc.trim().split('\n').forEach(l=>comment(` * ${l}`));
-    comment(' *');
-  }
-
-  /* Generic type params */
-  if (isClass(currentType)) {
-    state.typeParams.filter(p=>p.name.trim()||p.desc.trim()).forEach(p=>{
-      line(` * @param ${p.name.trim()||'<T>'}${p.desc.trim()?' '+p.desc.trim():''}`, 'tag');
-    });
-  }
-
-  /* Class tags */
-  if (isClass(currentType)) {
-    if (state.author.trim()) {
-      state.author.split(',').map(a=>a.trim()).filter(Boolean)
-        .forEach(a=>line(` * @author  ${a}`, 'tag'));
-    }
-    if (state.version.trim()) line(` * @version ${state.version.trim()}`, 'tag');
-  }
-  if ((isClass(currentType)||currentType==='Field') && state.since.trim())
-    line(` * @since   ${state.since.trim()}`, 'tag');
-
-  /* Method tags */
-  if (isMethod(currentType)) {
-    if (state.author.trim()) line(` * @author  ${state.author.trim()}`, 'tag');
-    if (state.since.trim())  line(` * @since   ${state.since.trim()}`, 'tag');
-
-    state.params.filter(p=>p.name.trim()||p.desc.trim()).forEach(p=>{
-      const tp = p.ptype.trim() ? `(${p.ptype.trim()}) ` : '';
-      line(` * @param   ${tp}${p.name.trim()||'param'}${p.desc.trim()?' '+p.desc.trim():''}`, 'tag');
-    });
-    if (currentType==='Method' && (state.returns.rtype.trim()||state.returns.desc.trim())) {
-      const rt = state.returns.rtype.trim() ? `{${state.returns.rtype.trim()}} ` : '';
-      line(` * @return  ${rt}${state.returns.desc.trim()}`, 'tag');
-    }
-    state.throws.filter(t=>t.etype.trim()||t.desc.trim()).forEach(t=>{
-      line(` * @throws  ${t.etype.trim()||'Exception'}${t.desc.trim()?' '+t.desc.trim():''}`, 'tag');
-    });
-  }
-
-  if (state.deprecated.trim()) line(` * @deprecated ${state.deprecated.trim()}`, 'tag');
-  state.see.filter(s=>s.trim()).forEach(s=>line(` * @see     ${s.trim()}`, 'tag'));
-
-  comment(' */');
+  appendMethodTags(out, state, currentType, profile);
+  appendFooterTags(out, state, profile);
+  appendLine(out, ' */', 'comment');
   return out;
 }
 
@@ -452,8 +724,8 @@ function renderOutput() {
       const cls =escHtml(dot>=0?full.slice(dot+1):full);
       div.innerHTML=`<span class="c-kw">import</span> <span class="c-deco">${pre2}</span><span class="c-imp">${cls}</span><span class="c-deco">;</span>`;
     } else if (kind==='tag') {
-      const m=text.match(/^( \* )(@\w+)(.*)?$/);
-      if (m) div.innerHTML=`<span class="c-deco">${m[1]}</span><span class="c-tag">${m[2]}</span><span class="c-val">${escHtml(m[3]||'')}</span>`;
+      const m=/^ \* (@\w+)(.*)$/.exec(text);
+      if (m) div.innerHTML=`<span class="c-deco"> * </span><span class="c-tag">${m[1]}</span><span class="c-val">${escHtml(m[2]||'')}</span>`;
       else div.innerHTML=`<span class="c-deco">${escHtml(text)}</span>`;
     } else {
       div.innerHTML=`<span class="c-deco">${escHtml(text)}</span>`;
@@ -463,7 +735,10 @@ function renderOutput() {
 }
 
 function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s)
+    .replaceAll('&','&amp;')
+    .replaceAll('<','&lt;')
+    .replaceAll('>','&gt;');
 }
 
 function copyOutput() {
