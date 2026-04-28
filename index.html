@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>JavaDoc Generator</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+<h1>JavaDoc Generator</h1>
+<p class="subtitle">Standard-compliant Java documentation comment builder</p>
+
+<div class="tab-row" id="tabs"></div>
+
+<div class="layout">
+  <div class="panel">
+    <div class="panel-title">Fields</div>
+    <div id="form-fields"></div>
+  </div>
+  <div class="panel">
+    <div class="output-header">
+      <div class="panel-title" style="margin:0">Generated Output</div>
+      <button class="copy-btn" id="copy-btn" onclick="copyOutput()">Copy</button>
+    </div>
+    <pre id="output"></pre>
+  </div>
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,150 @@
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+      color: #222;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    h1 { font-size: 22px; margin-bottom: 6px; color: #1a1a1a; }
+    .subtitle { font-size: 13px; color: #888; margin-bottom: 18px; }
+
+    /* Tabs */
+    .tab-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; }
+    .tab {
+      padding: 6px 14px; font-size: 13px;
+      border: 1px solid #ccc; border-radius: 4px;
+      background: #fff; cursor: pointer;
+    }
+    .tab.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+
+    /* Layout */
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 700px) { .layout { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 16px;
+    }
+
+    .panel-title {
+      font-size: 12px; font-weight: bold;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: #666; margin-bottom: 14px;
+    }
+
+    /* Collapsible sections */
+    .section {
+      border: 1px solid #e8e8e8;
+      border-radius: 5px;
+      margin-bottom: 10px;
+      overflow: hidden;
+    }
+    .section-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px;
+      background: #f9f9f9;
+      border-bottom: 1px solid #e8e8e8;
+      cursor: pointer;
+      user-select: none;
+    }
+    .section-header:hover { background: #f2f2f2; }
+    .section-arrow { font-size: 10px; color: #999; transition: transform 0.15s; display: inline-block; }
+    .section-arrow.open { transform: rotate(90deg); }
+    .section-label { font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.04em; color: #444; flex: 1; }
+    .section-badge { font-size: 11px; background: #eee; padding: 1px 7px; border-radius: 10px; color: #999; }
+    .section-body { padding: 12px; display: none; }
+    .section-body.open { display: block; }
+
+    /* Form fields */
+    .field-group { margin-bottom: 10px; }
+    label {
+      display: block; font-size: 11px; font-weight: bold;
+      color: #666; margin-bottom: 4px;
+      text-transform: uppercase; letter-spacing: 0.03em;
+    }
+    input[type="text"], textarea, select {
+      width: 100%; padding: 7px 9px; font-size: 13px;
+      border: 1px solid #ccc; border-radius: 4px;
+      font-family: Arial, sans-serif;
+      background: #fafafa; color: #222; outline: none;
+    }
+    input[type="text"]:focus, textarea:focus, select:focus {
+      border-color: #888; background: #fff;
+    }
+    textarea { resize: vertical; line-height: 1.5; }
+    select { cursor: pointer; }
+
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+    /* Checkbox row */
+    .check-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .check-row input[type="checkbox"] { width: auto; cursor: pointer; accent-color: #1a1a1a; }
+    .check-row label { margin: 0; font-size: 13px; font-weight: normal; text-transform: none; letter-spacing: 0; cursor: pointer; color: #333; }
+
+    /* Sub-title inside section body */
+    .sub-title {
+      font-size: 11px; font-weight: bold; text-transform: uppercase;
+      letter-spacing: 0.04em; color: #aaa;
+      margin: 12px 0 6px; padding-top: 10px;
+      border-top: 1px solid #eee;
+    }
+
+    /* Dynamic rows */
+    .dyn-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+    .dyn-row input { flex: 1; min-width: 0; }
+    .remove-btn {
+      padding: 5px 9px; font-size: 14px;
+      border: 1px solid #ddd; border-radius: 4px;
+      background: #fff; cursor: pointer; color: #bbb; flex-shrink: 0;
+    }
+    .remove-btn:hover { background: #fee; color: #c00; border-color: #fcc; }
+    .add-btn {
+      font-size: 12px; padding: 5px 10px;
+      border: 1px dashed #bbb; border-radius: 4px;
+      background: transparent; cursor: pointer; color: #666; margin-top: 2px;
+    }
+    .add-btn:hover { background: #f0f0f0; }
+
+    /* Tag hint chips */
+    .tag-hints { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 6px; }
+    .chip {
+      font-size: 11px; font-family: "Courier New", monospace;
+      padding: 2px 7px; border-radius: 3px;
+      background: #eef; color: #446; border: 1px solid #ccf;
+      cursor: pointer; user-select: none;
+    }
+    .chip:hover { background: #ddf; }
+
+    /* Output */
+    .output-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .copy-btn {
+      padding: 5px 12px; font-size: 12px;
+      border: 1px solid #ccc; border-radius: 4px;
+      background: #fff; cursor: pointer; color: #444;
+    }
+    .copy-btn:hover { background: #f0f0f0; }
+    .copy-btn.copied { color: #2a7a2a; border-color: #2a7a2a; }
+
+    pre {
+      font-family: "Courier New", Courier, monospace;
+      font-size: 12.5px; line-height: 1.75;
+      white-space: pre; overflow-x: auto;
+      background: #1e1e1e; color: #d4d4d4;
+      padding: 14px; border-radius: 4px;
+    }
+    .c-tag  { color: #569cd6; }
+    .c-val  { color: #d4d4d4; }
+    .c-deco { color: #6a9955; }
+    .c-kw   { color: #c586c0; }
+    .c-pkg  { color: #9cdcfe; }
+    .c-imp  { color: #4ec9b0; }
